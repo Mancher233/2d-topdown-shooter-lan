@@ -79,6 +79,17 @@
     let myId = null;      // 服务器分配给我的 ID（'player1' 或 'player2'）
     let isHost = false;   // 我是否是房主
     let gameStarted = false;
+    let ws = null;        // WebSocket 引用（用于在刷新时主动关闭）
+    let intentionalClose = false; // 标记是否是主动关闭（避免重复处理）
+
+    // ==== 关键修复：刷新/关闭页面时主动断开 WebSocket ====
+    // 如果不在这里关闭，服务器可能要等 15-60 秒才能检测到断开，
+    // 导致“残留连接”问题——下一局游戏会因为旧连接的存在而出错。
+    window.addEventListener('beforeunload', () => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
+    });
 
     // 设置状态消息的辅助函数
     function setStatus(msg) {
@@ -88,12 +99,13 @@
     // ---- "创建游戏" 按钮被点击 ----
     btnHost.addEventListener('click', () => {
       isHost = true;
+      intentionalClose = false;
       setStatus('正在连接服务器...');
       btnHost.disabled = true;
       btnJoin.disabled = true;
 
       // 连接到本机的服务器（localhost = 自己的电脑）
-      Network.connect('localhost', onOpen, onMessage, onClose);
+      ws = Network.connect('localhost', onOpen, onMessage, onClose);
     });
 
     // ---- "加入游戏" 按钮被点击 ----
@@ -104,12 +116,13 @@
         return;
       }
       isHost = false;
+      intentionalClose = false;
       setStatus('正在连接到 ' + ip + ' ...');
       btnHost.disabled = true;
       btnJoin.disabled = true;
 
       // 连接到房主电脑的服务器
-      Network.connect(ip, onOpen, onMessage, onClose);
+      ws = Network.connect(ip, onOpen, onMessage, onClose);
     });
 
     // ---- WebSocket 连接成功 ----
@@ -133,12 +146,29 @@
         }
       }
 
+      if (data.type === 'roomFull') {
+        intentionalClose = true; // 服务器会立即关闭连接，不要重复处理
+        // 房间已满（已有 2 个玩家在玩）
+        setStatus('房间已满！请等待当前游戏结束后再试。');
+        btnHost.disabled = false;
+        btnJoin.disabled = false;
+        return;
+      }
+
       if (data.type === 'opponentLeft') {
+        intentionalClose = true; // 标记：服务器主动断开，不要重复处理
         // 停止当前游戏循环
         if (isHost && typeof HostGame !== 'undefined') HostGame.stop();
         if (!isHost && typeof ClientGame !== 'undefined') ClientGame.stop();
-        setStatus('对手已断开连接。');
+        // 回到大厅，让用户可以重新开始（不需要刷新页面）
+        canvas.style.display = 'none';
+        lobby.style.display = 'block';
+        setStatus('对手已断开连接。你可以重新创建或加入游戏。');
+        btnHost.disabled = false;
+        btnJoin.disabled = false;
         gameStarted = false;
+        myId = null;
+        return;
       }
 
       // 把消息传给对应的游戏模块处理
@@ -153,7 +183,17 @@
 
     // ---- WebSocket 连接断开 ----
     function onClose() {
-      setStatus('连接已断开。请刷新页面重试。');
+      if (intentionalClose) {
+        intentionalClose = false; // 已经被 opponentLeft/roomFull 处理过了
+        return;
+      }
+      if (!gameStarted) {
+        // 还没开始游戏就断开了——可能是服务器没开，或者被拒绝了
+        setStatus('连接已断开。请确认服务器正在运行，然后重试。');
+        btnHost.disabled = false;
+        btnJoin.disabled = false;
+      }
+      // 如果游戏已开始，断开连接的处理在 opponentLeft 中完成
     }
 
     // ---- 开始游戏 ----
