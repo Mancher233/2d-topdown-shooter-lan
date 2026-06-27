@@ -1,0 +1,12 @@
+{
+  "name": "top-down-shooter-server",
+  "version": "1.0.0",
+  "description": "WebSocket relay server for 2D top-down shooter LAN multiplayer",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
