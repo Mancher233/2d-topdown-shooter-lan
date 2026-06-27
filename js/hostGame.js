@@ -39,6 +39,12 @@ var HostGame = (function () {
     ctx = canvas.getContext('2d');
     myId = playerId;
 
+    // ==== 反浏览器节流 (Anti-Throttle) ====
+    // 浏览器会限制后台标签页的 requestAnimationFrame 频率（降到约 1 次/秒）
+    // 这会导致房主的游戏循环几乎停止，加入者无法操作。
+    // 解决方案：播放一个几乎无声的音频——浏览器不会节流正在播放音频的标签页！
+    startAntiThrottle();
+
     // 创建两个玩家
     var sp = GameMap.spawnPoints;
     var p1 = Player.createPlayer('player1', sp[0].x, sp[0].y, '#4fc3f7'); // 蓝色
@@ -57,6 +63,28 @@ var HostGame = (function () {
     running = true;
     lastTime = performance.now();
     requestAnimationFrame(gameLoop);
+  }
+
+  /**
+   * 反浏览器节流机制
+   * 创建一个几乎无声的音频振荡器，防止浏览器降低后台标签页的运行频率。
+   * gain 值 0.001 几乎听不到，但足以让浏览器认为“这个标签正在播放音频”。
+   */
+  function startAntiThrottle() {
+    try {
+      var AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      var audioCtx = new AudioCtx();
+      var oscillator = audioCtx.createOscillator();
+      var gainNode = audioCtx.createGain();
+      gainNode.gain.value = 0.001;  // 音量极低，人耳几乎听不到
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      oscillator.start();
+      console.log('[HostGame] Anti-throttle audio started');
+    } catch (e) {
+      console.warn('[HostGame] Anti-throttle failed:', e);
+    }
   }
 
   /**

@@ -36,7 +36,28 @@ var ClientGame = (function () {
 
     lastTime = performance.now();
     running = true;
+    startAntiThrottle();
     requestAnimationFrame(gameLoop);
+  }
+
+  /**
+   * 反浏览器节流机制（与房主端相同）
+   * 防止切换标签页时游戏循环被浏览器降速
+   */
+  function startAntiThrottle() {
+    try {
+      var AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      var audioCtx = new AudioCtx();
+      var oscillator = audioCtx.createOscillator();
+      var gainNode = audioCtx.createGain();
+      gainNode.gain.value = 0.001;
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      oscillator.start();
+    } catch (e) {
+      console.warn('[ClientGame] Anti-throttle failed:', e);
+    }
   }
 
   /**
