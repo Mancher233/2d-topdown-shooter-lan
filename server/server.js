@@ -70,7 +70,25 @@ const wss = new WebSocket.Server({ server });
 let players = [];   // 最多 2 个玩家
 let nextId = 1;     // 玩家编号：1 或 2
 
+// 心跳检测：每 5 秒 ping 一次，检测死连接（浏览器崩溃等极端情况）
+setInterval(() => {
+  players.forEach(p => {
+    if (p.ws.readyState === WebSocket.OPEN) {
+      p.ws.ping(); // WebSocket 内置 ping，如果连接已死会触发 close
+    }
+  });
+}, 5000);
+
 wss.on('connection', (ws) => {
+  // ==== 房间已满检查 ====
+  // 如果已经有 2 个玩家在玩，拒绝新连接
+  if (players.length >= 2) {
+    ws.send(JSON.stringify({ type: 'roomFull' }));
+    ws.close();
+    console.log('[Server] Connection rejected: room full (2 players already)');
+    return;
+  }
+
   // 给新连接的玩家分配 ID
   const playerId = 'player' + nextId;
   nextId++;
@@ -102,23 +120,26 @@ wss.on('connection', (ws) => {
     });
   });
 
-  // 当玩家断开连接时，从列表中移除
+  // 当玩家断开连接时：
+  //   1. 通知其他玩家对手离开了
+  //   2. 强制断开所有其他玩家（确保下一局干净开始，不会有残留连接）
+  //   3. 重置所有状态
   ws.on('close', () => {
-    players = players.filter(p => p.ws !== ws);
-    console.log('[Server] ' + playerId + ' disconnected. Remaining: ' + players.length);
+    const remaining = players.filter(p => p.ws !== ws);
+    console.log('[Server] ' + playerId + ' disconnected. Remaining: ' + remaining.length);
 
-    // 通知剩下的玩家对手离开了
-    players.forEach(p => {
-      p.ws.send(JSON.stringify({ type: 'opponentLeft' }));
+    // 通知并断开所有其他玩家（强制大家一起回到大厅，保证状态干净）
+    remaining.forEach(p => {
+      if (p.ws.readyState === WebSocket.OPEN) {
+        p.ws.send(JSON.stringify({ type: 'opponentLeft' }));
+        p.ws.close(); // 强制关闭，确保下一局所有人都重新连接
+      }
     });
 
-    // 重置 ID 分配——找到最低可用的编号
-    if (players.length === 0) {
-      nextId = 1;
-    } else {
-      var usedIds = players.map(function(p) { return p.id; });
-      nextId = usedIds.indexOf('player1') >= 0 ? 2 : 1;
-    }
+    // 完全重置服务器状态
+    players = [];
+    nextId = 1;
+    console.log('[Server] All connections cleared. Ready for new game.');
   });
 });
 

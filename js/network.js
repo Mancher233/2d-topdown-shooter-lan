@@ -55,6 +55,9 @@ var Network = (function () {
     ws.onerror = function (err) {
       console.error('[Network] WebSocket error:', err);
     };
+
+    // 返回 WebSocket 引用（供 beforeunload 时主动关闭）
+    return ws;
   }
 
   /**
