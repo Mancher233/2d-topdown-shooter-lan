@@ -12,7 +12,7 @@ var Bullet = (function () {
   var DAMAGE = 17;       // 每颗子弹的伤害（6 发击杀 100HP，TTK ≈ 400ms）
   var RADIUS = 4;        // 子弹碰撞半径
   var MAX_RANGE = 800;   // 子弹最大飞行距离（超过后消失）
-  var FIRE_INTERVAL = 0.08; // 射击间隔（秒）—— 750 发/分钟 = 12.5 发/秒
+  var FIRE_INTERVAL = 1 / 12; // 射击间隔（秒）—— 12 发/秒
 
   /**
    * 创建一颗新子弹

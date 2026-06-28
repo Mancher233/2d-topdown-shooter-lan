@@ -376,7 +376,7 @@ var HostGame = (function () {
     var heatY = barY + barH + 5;  // 血量条下面 5px
     var heatH = 14;               // 热量条高度
     var heat = hostPlayer.heat;
-    var heatRatio = heat / 100;
+    var heatRatio = heat / Player.MAX_HEAT;
 
     // 背景
     ctx.fillStyle = '#222';
@@ -384,18 +384,19 @@ var HostGame = (function () {
 
     // 根据热量水平选择颜色
     var heatColor;
+    var warnThreshold = Player.MAX_HEAT * 0.8;  // 80% 警告线
     if (hostPlayer.overheated) {
       // 过热状态：红色 + 脉冲效果
       var pulse = 0.6 + 0.4 * Math.abs(Math.sin(performance.now() / 150));
       ctx.globalAlpha = pulse;
       heatColor = '#ff1744';  // 亮红色
-    } else if (heat >= 80) {
+    } else if (heat >= warnThreshold) {
       // 警告区（80-100%）：橙红色渐变
-      var t = (heat - 80) / 20;  // 0 到 1
+      var t = (heat - warnThreshold) / (Player.MAX_HEAT - warnThreshold);
       heatColor = lerpColor('#ff9800', '#f44336', t);  // 橙色到红色
     } else {
       // 正常区（0-80%）：黄色到橙色渐变
-      var t = heat / 80;  // 0 到 1
+      var t = heat / warnThreshold;
       heatColor = lerpColor('#ffeb3b', '#ff9800', t);  // 黄色到橙色
     }
 
@@ -412,7 +413,7 @@ var HostGame = (function () {
     // 热量文字
     ctx.fillStyle = '#fff';
     ctx.font = '10px monospace';
-    var heatText = 'HEAT: ' + Math.round(heat) + '%';
+    var heatText = 'HEAT: ' + Math.round(heat) + ' / ' + Player.MAX_HEAT;
     if (hostPlayer.overheated) heatText += ' 过热！';
     ctx.fillText(heatText, barX + 5, heatY + 11);
 

@@ -34,7 +34,7 @@ var ClientGame = (function () {
 
   // ---- 本地热量追踪 ----
   // 热量不通过网络同步，每个客户端自己计算自己的热量
-  var localHeat = 0;          // 本地热量（0-100）
+  var localHeat = 0;          // 本地热量（0 ~ MAX_HEAT）
   var localOverheated = false; // 本地过热状态
 
   // ---- 视线计算节流（高刷新率显示器优化） ----
@@ -153,20 +153,17 @@ var ClientGame = (function () {
     // 热量不通过网络同步，加入者自己计算自己的热量
     if (didShoot) {
       localHeat += Player.HEAT_PER_SHOT;
-      if (localHeat >= 100) {
-        localHeat = 100;
+      if (localHeat >= Player.MAX_HEAT) {
+        localHeat = Player.MAX_HEAT;
         localOverheated = true;
       }
     } else if (localHeat > 0) {
-      var coolRate = localOverheated ? (100 / 6) : (100 / 3.5);
+      var coolRate = localOverheated ? 7 : 10;  // 过热 7度/秒，正常 10度/秒
       localHeat -= coolRate * dt;
       if (localHeat <= 0) {
         localHeat = 0;
-        localOverheated = false;
+        localOverheated = false;  // 完全冷却，解除过热
       }
-    }
-    if (localOverheated && localHeat <= Player.OVERHEAT_SHOOT_THRESHOLD) {
-      localOverheated = false;
     }
   }
 
@@ -282,7 +279,7 @@ var ClientGame = (function () {
     // -- 热量条（在血量条下方） --
     var heatY = barY + barH + 5;
     var heatH = 14;
-    var heatRatio = localHeat / 100;
+    var heatRatio = localHeat / Player.MAX_HEAT;
 
     // 背景
     ctx.fillStyle = '#222';
@@ -290,15 +287,16 @@ var ClientGame = (function () {
 
     // 根据热量水平选择颜色（与房主端相同的逻辑）
     var heatColor;
+    var warnThreshold = Player.MAX_HEAT * 0.8;
     if (localOverheated) {
       var pulse = 0.6 + 0.4 * Math.abs(Math.sin(performance.now() / 150));
       ctx.globalAlpha = pulse;
       heatColor = '#ff1744';
-    } else if (localHeat >= 80) {
-      var t = (localHeat - 80) / 20;
+    } else if (localHeat >= warnThreshold) {
+      var t = (localHeat - warnThreshold) / (Player.MAX_HEAT - warnThreshold);
       heatColor = lerpColor('#ff9800', '#f44336', t);
     } else {
-      var t = localHeat / 80;
+      var t = localHeat / warnThreshold;
       heatColor = lerpColor('#ffeb3b', '#ff9800', t);
     }
 
@@ -312,7 +310,7 @@ var ClientGame = (function () {
 
     ctx.fillStyle = '#fff';
     ctx.font = '10px monospace';
-    var heatText = 'HEAT: ' + Math.round(localHeat) + '%';
+    var heatText = 'HEAT: ' + Math.round(localHeat) + ' / ' + Player.MAX_HEAT;
     if (localOverheated) heatText += ' 过热！';
     ctx.fillText(heatText, barX + 5, heatY + 11);
 
