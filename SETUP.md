@@ -37,7 +37,8 @@ Node.js 是运行我们游戏服务器的环境。
      js/                ← 游戏代码
      server/            ← 服务器代码
      SETUP.md           ← 你正在看的这个文件
-     REPORT.md          ← 课程报告
+     README.md          ← 项目总览与玩法说明
+     ATTRIBUTIONS.md    ← 声明与致谢
    ```
 
 ---
