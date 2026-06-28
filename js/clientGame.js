@@ -32,6 +32,11 @@ var ClientGame = (function () {
   // 加入者用这个来限制发送射击事件的频率（匹配房主的 FIRE_INTERVAL）
   var localShootTimer = 0;
 
+  // ---- 视线计算节流（高刷新率显示器优化） ----
+  var cachedVisionPoints = null;
+  var lastVisionTime = 0;
+  var VISION_UPDATE_INTERVAL = 1 / 60;  // 最多 60 次/秒
+
   /**
    * 启动游戏（由 index.html 中的 startGame() 调用）
    */
@@ -85,7 +90,7 @@ var ClientGame = (function () {
     lastTime = timestamp;
 
     sendInput(dt);
-    render();
+    render(timestamp);
 
     requestAnimationFrame(gameLoop);
   }
@@ -141,7 +146,7 @@ var ClientGame = (function () {
   // ==========================================================================
   // 渲染
   // ==========================================================================
-  function render() {
+  function render(timestamp) {
     var cw = canvas.width;
     var ch = canvas.height;
 
@@ -200,9 +205,12 @@ var ClientGame = (function () {
 
     ctx.restore();
 
-    // 6. 战争迷雾（基于本地玩家的视线）
-    var visionPts = Vision.computeVision(localPlayer.x, localPlayer.y);
-    var screenPts = Vision.worldToScreenPoints(visionPts, camX, camY);
+    // 6. 战争迷雾（基于本地玩家的视线）—— 节流到 ~60Hz
+    if (!cachedVisionPoints || (timestamp - lastVisionTime) >= (VISION_UPDATE_INTERVAL * 1000)) {
+      cachedVisionPoints = Vision.computeVision(localPlayer.x, localPlayer.y);
+      lastVisionTime = timestamp;
+    }
+    var screenPts = Vision.worldToScreenPoints(cachedVisionPoints, camX, camY);
     Vision.drawFog(ctx, screenPts, cw, ch);
 
     // 7. HUD
