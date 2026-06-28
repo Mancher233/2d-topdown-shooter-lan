@@ -173,12 +173,9 @@ var HostGame = (function () {
     var worldMouse = Input.getWorldMouse(camX, camY);
     Player.updateAim(hostPlayer, worldMouse.x, worldMouse.y);
 
-    // 消耗点击事件（只调用一次！）
-    var didClick = Input.consumeClick();
-
-    // 房主射击（左键点击）
+    // 房主射击（全自动：按住左键连续射击，射速由 FIRE_INTERVAL 控制）
     shootTimers[hostPlayer.id] -= dt;
-    if (didClick && shootTimers[hostPlayer.id] <= 0 && hostPlayer.alive) {
+    if (Input.isMouseDown() && shootTimers[hostPlayer.id] <= 0 && hostPlayer.alive) {
       spawnBullet(hostPlayer, hostPlayer.aimAngle);
       shootTimers[hostPlayer.id] = Bullet.FIRE_INTERVAL;
     }

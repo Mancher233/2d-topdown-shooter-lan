@@ -26,9 +26,11 @@ var ClientGame = (function () {
   var gKeyWasDown = false;
   var running = false;  // 游戏循环是否正在运行
 
-  // ---- 本地手雷冷却追踪 ----
-  // 与热量一样，手雷冷却在本地计算，不通过网络同步
+  // ---- 本地冷却追踪 ----
+  // 手雷冷却在本地计算，不通过网络同步
   var localGrenadeTimer = 0;  // 手雷冷却剩余时间（秒）
+  // 加入者用这个来限制发送射击事件的频率（匹配房主的 FIRE_INTERVAL）
+  var localShootTimer = 0;
 
   /**
    * 启动游戏（由 index.html 中的 startGame() 调用）
@@ -82,7 +84,7 @@ var ClientGame = (function () {
     if (dt > 1 / 30) dt = 1 / 30;
     lastTime = timestamp;
 
-    sendInput();
+    sendInput(dt);
     render();
 
     requestAnimationFrame(gameLoop);
@@ -91,7 +93,7 @@ var ClientGame = (function () {
   // ==========================================================================
   // 发送本地输入给房主
   // ==========================================================================
-  function sendInput() {
+  function sendInput(dt) {
     if (!receivedState) return;
 
     // 找到本地玩家对象（用于计算瞄准角度）
@@ -114,9 +116,11 @@ var ClientGame = (function () {
     // 发送输入状态
     Network.sendInput(keysList, Input.getMousePos().x, Input.getMousePos().y, Input.isMouseDown(), aimAngle);
 
-    // 检测射击（左键点击）
-    if (Input.consumeClick() && localPlayer.alive) {
+    // 全自动射击：按住左键连续射击，射速由 FIRE_INTERVAL 控制
+    localShootTimer -= dt;
+    if (Input.isMouseDown() && localShootTimer <= 0 && localPlayer.alive) {
       Network.sendAction('shoot', { angle: aimAngle });
+      localShootTimer = Bullet.FIRE_INTERVAL;
     }
 
     // 检测扔手雷（G 键，按一下扔一个）
