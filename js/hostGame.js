@@ -31,6 +31,13 @@ var HostGame = (function () {
   var STATE_SEND_INTERVAL = 1 / 30;  // 约 33ms 发送一次
   var running = false;  // 游戏循环是否正在运行
 
+  // ---- 视线计算节流 ----
+  // 高刷新率显示器（144Hz/240Hz）下，每帧都算 144 条射线太浪费
+  // 限制视线计算最多每 ~16ms 一次（约 60Hz），中间帧复用上次结果
+  var cachedVisionPoints = null;
+  var visionUpdateTimer = 0;
+  var VISION_UPDATE_INTERVAL = 1 / 60;  // 最多 60 次/秒
+
   /**
    * 启动游戏（由 index.html 中的 startGame() 调用）
    */
@@ -260,7 +267,14 @@ var HostGame = (function () {
     Player.checkRespawn(players[0], dt, sp[0].x, sp[0].y);
     Player.checkRespawn(players[1], dt, sp[1].x, sp[1].y);
 
-    // ---- 9. 发送游戏状态给加入者（~30次/秒） ----
+    // ---- 9. 视线计算节流（高刷新率下避免每帧都算 144 条射线） ----
+    visionUpdateTimer += dt;
+    if (visionUpdateTimer >= VISION_UPDATE_INTERVAL || !cachedVisionPoints) {
+      cachedVisionPoints = Vision.computeVision(hostPlayer.x, hostPlayer.y);
+      visionUpdateTimer = 0;
+    }
+
+    // ---- 10. 发送游戏状态给加入者（~30次/秒） ----
     stateSendTimer += dt;
     if (stateSendTimer >= STATE_SEND_INTERVAL) {
       stateSendTimer = 0;
@@ -315,9 +329,11 @@ var HostGame = (function () {
 
     ctx.restore();  // 恢复坐标系
 
-    // 6. 画战争迷雾（在屏幕坐标系中）
-    var visionPts = Vision.computeVision(hostPlayer.x, hostPlayer.y);
-    var screenPts = Vision.worldToScreenPoints(visionPts, camX, camY);
+    // 6. 画战争迷雾（在屏幕坐标系中）—— 节流到 ~60Hz
+    if (!cachedVisionPoints) {
+      cachedVisionPoints = Vision.computeVision(hostPlayer.x, hostPlayer.y);
+    }
+    var screenPts = Vision.worldToScreenPoints(cachedVisionPoints, camX, camY);
     Vision.drawFog(ctx, screenPts, cw, ch);
 
     // 7. 画 HUD（血量条、冷却指示器）
