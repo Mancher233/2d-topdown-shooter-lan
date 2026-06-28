@@ -26,6 +26,10 @@ var ClientGame = (function () {
   var gKeyWasDown = false;
   var running = false;  // 游戏循环是否正在运行
 
+  // ---- 本地手雷冷却追踪 ----
+  // 与热量一样，手雷冷却在本地计算，不通过网络同步
+  var localGrenadeTimer = 0;  // 手雷冷却剩余时间（秒）
+
   /**
    * 启动游戏（由 index.html 中的 startGame() 调用）
    */
@@ -116,11 +120,18 @@ var ClientGame = (function () {
     }
 
     // 检测扔手雷（G 键，按一下扔一个）
-    if (Input.isKeyDown('g') && !gKeyWasDown && localPlayer.alive) {
+    if (Input.isKeyDown('g') && !gKeyWasDown && localPlayer.alive && localGrenadeTimer <= 0) {
       var wm = Input.getWorldMouse(camX, camY);
       Network.sendAction('throw', { targetX: wm.x, targetY: wm.y });
+      localGrenadeTimer = Grenade.COOLDOWN;  // 本地开始冷却
     }
     gKeyWasDown = Input.isKeyDown('g');
+
+    // 本地手雷冷却更新
+    if (localGrenadeTimer > 0) {
+      localGrenadeTimer -= dt;
+      if (localGrenadeTimer < 0) localGrenadeTimer = 0;
+    }
   }
 
   // ==========================================================================
@@ -240,12 +251,15 @@ var ClientGame = (function () {
     ctx.font = '10px monospace';
     ctx.fillText('翻滚 [空格]', barX, rollY - 3);
 
-    // 手雷冷却（加入者不知道精确冷却，用 G 键估算）
+    // 手雷冷却（加入者本地追踪）
     var grenadeY = rollY - 25;
     ctx.fillStyle = '#333';
     ctx.fillRect(barX, grenadeY, barW, 10);
-    ctx.fillStyle = '#66bb6a';
-    ctx.fillRect(barX, grenadeY, barW, 10);  // 简化：加入者显示满
+    var gReadyRatio = 1 - (localGrenadeTimer / Grenade.COOLDOWN);
+    if (gReadyRatio < 0) gReadyRatio = 0;
+    if (gReadyRatio > 1) gReadyRatio = 1;
+    ctx.fillStyle = gReadyRatio >= 1 ? '#66bb6a' : '#666';
+    ctx.fillRect(barX, grenadeY, barW * gReadyRatio, 10);
     ctx.fillStyle = '#aaa';
     ctx.font = '10px monospace';
     ctx.fillText('手雷 [G]', barX, grenadeY - 3);

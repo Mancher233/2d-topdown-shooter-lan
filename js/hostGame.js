@@ -364,7 +364,8 @@ var HostGame = (function () {
     ctx.fillStyle = '#333';
     ctx.fillRect(barX, grenadeY, barW, 10);
     var gCdRatio = 1 - (grenadeTimers[hostPlayer.id] / Grenade.COOLDOWN);
-    if (gCdRatio < 0) gCdRatio = 0;
+    if (gCdRatio < 0) gCdRatio = 0;  // 冷却中不能小于 0
+    if (gCdRatio > 1) gCdRatio = 1;  // 不能超过 1（timer 可能为负值）
     ctx.fillStyle = gCdRatio >= 1 ? '#66bb6a' : '#666';
     ctx.fillRect(barX, grenadeY, barW * gCdRatio, 10);
     ctx.fillStyle = '#aaa';
