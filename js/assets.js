@@ -17,7 +17,7 @@ var Assets = (function () {
    */
   function preloadAll(callback) {
     var total = 0;       // 总资源数
-    var loaded = 0;      // 已加载数
+    var loaded = 0;      // 已加载/已处理数
     var callbackCalled = false;
 
     // 进度检查函数：当所有资源都尝试加载后（成功或失败），调用回调
@@ -55,7 +55,6 @@ var Assets = (function () {
 
     // ---- 加载图片 ----
     var allImageFiles = {};
-    // 合并角色和手雷图片
     for (var k in characterFiles) {
       if (characterFiles.hasOwnProperty(k)) allImageFiles[k] = characterFiles[k];
     }
@@ -84,34 +83,54 @@ var Assets = (function () {
     }
 
     // ---- 加载音频 ----
+    // 使用 resolved 标志防止重复调用 checkDone()
+    // canplaythrough 可能永远不会触发（某些浏览器对 MP3 的支持问题）
+    // 因此设置一个较短的超时作为兜底机制
     for (var key in voiceFiles) {
       if (voiceFiles.hasOwnProperty(key)) {
         total++;
         (function (k, src) {
           var audio = new Audio();
           audio.preload = 'auto';
-          audio.addEventListener('canplaythrough', function () {
-            sounds[k] = audio;
-            console.log('[Assets] 音频加载成功: ' + k);
-            checkDone();
-          });
-          audio.addEventListener('error', function () {
-            sounds[k] = null;
-            console.warn('[Assets] 音频加载失败: ' + src);
-            checkDone();
-          });
-          audio.src = src;
-          // 某些浏览器可能不触发 canplaythrough，设置超时兜底
-          setTimeout(function () {
-            if (!sounds.hasOwnProperty(k)) {
-              // 如果还没设置过（既没成功也没失败），标记为 null
-              if (sounds[k] === undefined) {
-                sounds[k] = null;
-                console.warn('[Assets] 音频加载超时: ' + src);
-                checkDone();
-              }
+          var resolved = false;
+
+          function resolve(success) {
+            if (resolved) return;
+            resolved = true;
+            if (success) {
+              sounds[k] = audio;
+              console.log('[Assets] 音频加载成功: ' + k);
+            } else {
+              sounds[k] = null;
+              console.warn('[Assets] 音频加载失败/超时: ' + src);
             }
-          }, 5000);
+            checkDone();
+          }
+
+          // canplaythrough 触发时标记为成功
+          audio.addEventListener('canplaythrough', function () {
+            resolve(true);
+          });
+
+          // error 事件触发时标记为失败
+          audio.addEventListener('error', function () {
+            resolve(false);
+          });
+
+          // 设置音频源
+          audio.src = src;
+
+          // 超时兜底：如果 3 秒内没有任何事件触发，视为加载完成（可能可用也可能不可用）
+          setTimeout(function () {
+            // 如果还没解决，就认为音频已经"尽力了"
+            // 此时音频对象可能已经可以使用，也可能不行
+            // 无论如何都要推进游戏启动
+            if (!resolved) {
+              // 如果音频对象存在且没有报错，认为它可能可用
+              sounds[k] = audio;
+              resolve(true);
+            }
+          }, 3000);
         })(key, voiceFiles[key]);
       }
     }
