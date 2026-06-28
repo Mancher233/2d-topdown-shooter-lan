@@ -30,6 +30,7 @@ var Player = (function () {
   var MAX_HEAT = 40;                  // 温度上限（到达后过热）
   var NORMAL_COOL_RATE = 10;          // 正常冷却速率（10 度/秒）
   var OVERHEATED_COOL_RATE = 7;       // 过热后恢复速率（7 度/秒，更慢）
+  var SHOT_COOL_DELAY = 0.1;          // 射击后 0.1 秒内不自然冷却（不累加）
 
   /**
    * 创建一个新玩家对象
@@ -57,7 +58,8 @@ var Player = (function () {
       radius: RADIUS,
       // ---- 枪械过热属性 ----
       heat: 0,              // 当前热量（0 ~ MAX_HEAT）
-      overheated: false     // 是否处于过热状态（通过网络同步，对手可见）
+      overheated: false,    // 是否处于过热状态（通过网络同步，对手可见）
+      coolDelay: 0          // 射击后冷却延迟（秒），期间不自然降温
     };
   }
 
@@ -160,17 +162,24 @@ var Player = (function () {
     if (didShoot) {
       // 射击增加热量（射击帧不冷却！）
       p.heat += HEAT_PER_SHOT;
+      p.coolDelay = SHOT_COOL_DELAY;  // 射击后短暂禁止自然冷却
       if (p.heat >= MAX_HEAT) {
         p.heat = MAX_HEAT;
         p.overheated = true;  // 达到上限，标记为过热
       }
     } else if (p.heat > 0) {
-      // 没有射击时，热量逐渐降低
-      var coolRate = p.overheated ? OVERHEATED_COOL_RATE : NORMAL_COOL_RATE;
-      p.heat -= coolRate * dt;
-      if (p.heat <= 0) {
-        p.heat = 0;
-        p.overheated = false;  // 完全冷却，解除过热
+      // 射击后的短暂延迟期内不冷却
+      if (p.coolDelay > 0) {
+        p.coolDelay -= dt;
+        if (p.coolDelay < 0) p.coolDelay = 0;
+      } else {
+        // 延迟结束，正常冷却
+        var coolRate = p.overheated ? OVERHEATED_COOL_RATE : NORMAL_COOL_RATE;
+        p.heat -= coolRate * dt;
+        if (p.heat <= 0) {
+          p.heat = 0;
+          p.overheated = false;  // 完全冷却，解除过热
+        }
       }
     }
   }
@@ -337,6 +346,7 @@ var Player = (function () {
     ROLL_COOLDOWN: ROLL_COOLDOWN,
     HEAT_PER_SHOT: HEAT_PER_SHOT,
     MAX_HEAT: MAX_HEAT,
+    SHOT_COOL_DELAY: SHOT_COOL_DELAY,
     createPlayer: createPlayer,
     updatePlayer: updatePlayer,
     updateHeat: updateHeat,

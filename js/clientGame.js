@@ -36,6 +36,7 @@ var ClientGame = (function () {
   // 热量不通过网络同步，每个客户端自己计算自己的热量
   var localHeat = 0;          // 本地热量（0 ~ MAX_HEAT）
   var localOverheated = false; // 本地过热状态
+  var localCoolDelay = 0;     // 射击后 0.1 秒内不自然冷却
 
   // ---- 视线计算节流（高刷新率显示器优化） ----
   var cachedVisionPoints = null;
@@ -153,16 +154,22 @@ var ClientGame = (function () {
     // 热量不通过网络同步，加入者自己计算自己的热量
     if (didShoot) {
       localHeat += Player.HEAT_PER_SHOT;
+      localCoolDelay = Player.SHOT_COOL_DELAY;  // 射击后短暂禁止自然冷却
       if (localHeat >= Player.MAX_HEAT) {
         localHeat = Player.MAX_HEAT;
         localOverheated = true;
       }
     } else if (localHeat > 0) {
-      var coolRate = localOverheated ? 7 : 10;  // 过热 7度/秒，正常 10度/秒
-      localHeat -= coolRate * dt;
-      if (localHeat <= 0) {
-        localHeat = 0;
-        localOverheated = false;  // 完全冷却，解除过热
+      if (localCoolDelay > 0) {
+        localCoolDelay -= dt;
+        if (localCoolDelay < 0) localCoolDelay = 0;
+      } else {
+        var coolRate = localOverheated ? 7 : 10;  // 过热 7度/秒，正常 10度/秒
+        localHeat -= coolRate * dt;
+        if (localHeat <= 0) {
+          localHeat = 0;
+          localOverheated = false;  // 完全冷却，解除过热
+        }
       }
     }
   }
