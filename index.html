@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
   <meta charset="UTF-8">
   <title>张雪峰大战科比</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
+
 <body>
 
   <!-- ==============================
@@ -16,7 +18,7 @@
     <p class="subtitle">局域网双人对战</p>
 
     <p class="github-link">
-      联机步骤、玩法说明请移步
+      若无法运行，请联系我，或下载文件到本地运行。联机步骤、玩法说明请移步
       <a href="https://github.com/Mancher233/2d-topdown-shooter-lan" target="_blank">GitHub 仓库</a>
       （该 Repo 同时记录了项目实现过程）
     </p>
@@ -78,12 +80,12 @@
        ============================== -->
   <script>
     // ---- 获取页面元素 ----
-    const lobby    = document.getElementById('lobby');
-    const canvas   = document.getElementById('gameCanvas');
+    const lobby = document.getElementById('lobby');
+    const canvas = document.getElementById('gameCanvas');
     const statusEl = document.getElementById('status-msg');
-    const btnHost  = document.getElementById('btn-host');
-    const btnJoin  = document.getElementById('btn-join');
-    const inputIp  = document.getElementById('input-ip');
+    const btnHost = document.getElementById('btn-host');
+    const btnJoin = document.getElementById('btn-join');
+    const inputIp = document.getElementById('input-ip');
 
     // ---- 全局状态 ----
     let myId = null;      // 服务器分配给我的 ID（'player1' 或 'player2'）
@@ -211,14 +213,14 @@
       // 隐藏大厅，显示游戏画布
       lobby.style.display = 'none';
       canvas.style.display = 'block';
-    
+
       // 让画布填满窗口
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
-    
+
       // 初始化输入系统（绑定到画布上）
       Input.init(canvas);
-    
+
       // 预加载所有资源（图片 + 音频），加载完成后再启动游戏
       setStatus('正在加载游戏资源...');
       Assets.preloadAll(function () {
@@ -241,4 +243,5 @@
   </script>
 
 </body>
+
 </html>
