@@ -71,7 +71,7 @@ var ClientGame = (function () {
       var audioCtx = new AudioCtx();
       var oscillator = audioCtx.createOscillator();
       var gainNode = audioCtx.createGain();
-      gainNode.gain.value = 0.001;
+      gainNode.gain.value = 0.0001;
       oscillator.connect(gainNode);
       gainNode.connect(audioCtx.destination);
       oscillator.start();

@@ -17,6 +17,7 @@ var HostGame = (function () {
   var lastTime = 0;     // 上一帧的时间戳（用于计算 dt）
   var hostPlayer;       // 指向本地玩家（房主自己）
   var joinerPlayer;     // 指向远程玩家（加入者）
+  var p1, p2;          // 两个玩家对象（供 initSprites 等模块内函数访问）
 
   // 射击冷却计时器（每个玩家各一个）
   var shootTimers = {};       // { player1: 0, player2: 0 }
@@ -59,8 +60,8 @@ var HostGame = (function () {
 
     // 创建两个玩家
     var sp = GameMap.spawnPoints;
-    var p1 = Player.createPlayer('player1', sp[0].x, sp[0].y, '#4fc3f7'); // 蓝色
-    var p2 = Player.createPlayer('player2', sp[1].x, sp[1].y, '#ef5350'); // 红色
+    p1 = Player.createPlayer('player1', sp[0].x, sp[0].y, '#4fc3f7'); // 蓝色
+    p2 = Player.createPlayer('player2', sp[1].x, sp[1].y, '#ef5350'); // 红色
     players = [p1, p2];
 
     // 确定哪个是本地玩家，哪个是远程玩家
@@ -95,7 +96,7 @@ var HostGame = (function () {
       var audioCtx = new AudioCtx();
       var oscillator = audioCtx.createOscillator();
       var gainNode = audioCtx.createGain();
-      gainNode.gain.value = 0.001;  // 音量极低，人耳几乎听不到
+      gainNode.gain.value = 0.0001;  // 音量极低，人耳几乎听不到
       oscillator.connect(gainNode);
       gainNode.connect(audioCtx.destination);
       oscillator.start();
