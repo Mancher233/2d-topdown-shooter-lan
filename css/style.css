@@ -33,7 +33,29 @@ h1 {
 
 .subtitle {
   color: #888;
-  margin-bottom: 30px;
+  margin-bottom: 16px;
+}
+
+/* GitHub 仓库链接（醒目提示） */
+.github-link {
+  background: #16213e;
+  border: 1px solid #0f3460;
+  border-radius: 8px;
+  padding: 12px 18px;
+  margin-bottom: 24px;
+  font-size: 0.95em;
+  line-height: 1.6;
+}
+
+.github-link a {
+  color: #4fc3f7;
+  text-decoration: none;
+  font-weight: bold;
+}
+
+.github-link a:hover {
+  text-decoration: underline;
+  color: #81d4fa;
 }
 
 #status-msg {
@@ -101,4 +123,12 @@ label {
   position: fixed;
   top: 0;
   left: 0;
+}
+
+/* 底部致谢 */
+.credits {
+  margin-top: 30px;
+  color: #666;
+  font-size: 0.85em;
+  letter-spacing: 0.5px;
 }
