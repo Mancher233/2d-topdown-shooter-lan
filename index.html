@@ -46,6 +46,8 @@
   <script src="js/utils.js"></script>
   <!-- 键盘和鼠标输入 -->
   <script src="js/input.js"></script>
+  <!-- 资源预加载（图片 + 音频） -->
+  <script src="js/assets.js"></script>
   <!-- 地图：墙壁、碰撞检测 -->
   <script src="js/map.js"></script>
   <!-- 玩家：移动、翻滚、瞄准 -->
@@ -201,20 +203,24 @@
       // 隐藏大厅，显示游戏画布
       lobby.style.display = 'none';
       canvas.style.display = 'block';
-
+    
       // 让画布填满窗口
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
-
+    
       // 初始化输入系统（绑定到画布上）
       Input.init(canvas);
-
-      // 根据角色启动不同的游戏循环
-      if (isHost) {
-        HostGame.start(canvas, myId);
-      } else {
-        ClientGame.start(canvas, myId);
-      }
+    
+      // 预加载所有资源（图片 + 音频），加载完成后再启动游戏
+      setStatus('正在加载游戏资源...');
+      Assets.preloadAll(function () {
+        // 根据角色启动对应的游戏循环
+        if (isHost) {
+          HostGame.start(canvas, myId);
+        } else {
+          ClientGame.start(canvas, myId);
+        }
+      });
     }
 
     // 窗口大小改变时，调整画布尺寸
