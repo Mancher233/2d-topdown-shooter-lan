@@ -25,6 +25,8 @@ var HostGame = (function () {
 
   // 加入者的最新输入（从网络收到的）
   var joinerInput = null;
+  // 加入者是否在本帧射击了（用于热量更新）
+  var joinerDidShootThisFrame = false;
 
   // 状态发送频率控制（约 30 次/秒）
   var stateSendTimer = 0;
@@ -116,10 +118,11 @@ var HostGame = (function () {
     var jid = joinerPlayer.id;
 
     if (data.action === 'shoot') {
-      // 检查射击冷却
-      if (shootTimers[jid] <= 0) {
+      // 检查射击冷却 + 过热检查
+      if (shootTimers[jid] <= 0 && Player.canShoot(joinerPlayer)) {
         spawnBullet(joinerPlayer, data.params.angle);
         shootTimers[jid] = Bullet.FIRE_INTERVAL;
+        joinerDidShootThisFrame = true;  // 标记加入者本帧射击了
       }
     }
 
@@ -180,11 +183,13 @@ var HostGame = (function () {
     var worldMouse = Input.getWorldMouse(camX, camY);
     Player.updateAim(hostPlayer, worldMouse.x, worldMouse.y);
 
-    // 房主射击（全自动：按住左键连续射击，射速由 FIRE_INTERVAL 控制）
+    // 房主射击（全自动：按住左键连续射击 + 未过热）
+    var hostDidShoot = false;  // 本帧是否射击了
     shootTimers[hostPlayer.id] -= dt;
-    if (Input.isMouseDown() && shootTimers[hostPlayer.id] <= 0 && hostPlayer.alive) {
+    if (Input.isMouseDown() && shootTimers[hostPlayer.id] <= 0 && hostPlayer.alive && Player.canShoot(hostPlayer)) {
       spawnBullet(hostPlayer, hostPlayer.aimAngle);
       shootTimers[hostPlayer.id] = Bullet.FIRE_INTERVAL;
+      hostDidShoot = true;
     }
 
     // 房主扔手雷（G 键，按一下扔一个）
@@ -222,6 +227,12 @@ var HostGame = (function () {
     // 减少加入者的冷却计时器
     shootTimers[joinerPlayer.id] -= dt;
     grenadeTimers[joinerPlayer.id] -= dt;
+
+    // ---- 2.5 更新枪械热量 ----
+    // 热量是每个玩家本地计算的，不通过网络同步
+    Player.updateHeat(hostPlayer, dt, hostDidShoot);
+    Player.updateHeat(joinerPlayer, dt, joinerDidShootThisFrame);
+    joinerDidShootThisFrame = false;  // 重置加入者射击标记
 
     // ---- 3. 更新子弹 ----
     for (var i = 0; i < bullets.length; i++) {
@@ -361,6 +372,50 @@ var HostGame = (function () {
     ctx.font = '14px monospace';
     ctx.fillText('HP: ' + hostPlayer.hp + ' / ' + hostPlayer.maxHp, barX + 5, barY + 15);
 
+    // -- 热量条（在血量条下方） --
+    var heatY = barY + barH + 5;  // 血量条下面 5px
+    var heatH = 14;               // 热量条高度
+    var heat = hostPlayer.heat;
+    var heatRatio = heat / 100;
+
+    // 背景
+    ctx.fillStyle = '#222';
+    ctx.fillRect(barX, heatY, barW, heatH);
+
+    // 根据热量水平选择颜色
+    var heatColor;
+    if (hostPlayer.overheated) {
+      // 过热状态：红色 + 脉冲效果
+      var pulse = 0.6 + 0.4 * Math.abs(Math.sin(performance.now() / 150));
+      ctx.globalAlpha = pulse;
+      heatColor = '#ff1744';  // 亮红色
+    } else if (heat >= 80) {
+      // 警告区（80-100%）：橙红色渐变
+      var t = (heat - 80) / 20;  // 0 到 1
+      heatColor = lerpColor('#ff9800', '#f44336', t);  // 橙色到红色
+    } else {
+      // 正常区（0-80%）：黄色到橙色渐变
+      var t = heat / 80;  // 0 到 1
+      heatColor = lerpColor('#ffeb3b', '#ff9800', t);  // 黄色到橙色
+    }
+
+    // 画热量条
+    ctx.fillStyle = heatColor;
+    ctx.fillRect(barX, heatY, barW * heatRatio, heatH);
+    ctx.globalAlpha = 1;  // 恢复透明度
+
+    // 边框
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, heatY, barW, heatH);
+
+    // 热量文字
+    ctx.fillStyle = '#fff';
+    ctx.font = '10px monospace';
+    var heatText = 'HEAT: ' + Math.round(heat) + '%';
+    if (hostPlayer.overheated) heatText += ' 过热！';
+    ctx.fillText(heatText, barX + 5, heatY + 11);
+
     // -- 翻滚冷却条 --
     var rollY = barY - 25;
     ctx.fillStyle = '#333';
@@ -395,6 +450,24 @@ var HostGame = (function () {
       ctx.fillText('你被击败了！重生中...', cw / 2, ch / 2 + 8);
       ctx.textAlign = 'left';
     }
+  }
+
+  /**
+   * 颜色线性插值辅助函数
+   * 将两个 hex 颜色按比例混合
+   * t=0 返回 c1，t=1 返回 c2
+   */
+  function lerpColor(c1, c2, t) {
+    var r1 = parseInt(c1.slice(1, 3), 16);
+    var g1 = parseInt(c1.slice(3, 5), 16);
+    var b1 = parseInt(c1.slice(5, 7), 16);
+    var r2 = parseInt(c2.slice(1, 3), 16);
+    var g2 = parseInt(c2.slice(3, 5), 16);
+    var b2 = parseInt(c2.slice(5, 7), 16);
+    var r = Math.round(r1 + (r2 - r1) * t);
+    var g = Math.round(g1 + (g2 - g1) * t);
+    var b = Math.round(b1 + (b2 - b1) * t);
+    return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
   }
 
   // 暴露公共接口

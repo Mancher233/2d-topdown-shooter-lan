@@ -1,8 +1,14 @@
 // js/player.js
 // =============================================================================
 // 玩家模块 (Player)
-// 处理玩家的所有逻辑：创建、移动、翻滚闪避、瞄准、受伤、重生、绘制。
-// 玩家角色是一个圆形（半径 15 像素），带一根指向鼠标方向的"枪管"线。
+// 处理玩家的所有逻辑：创建、移动、翻滚闪避、瞄准、受伤、重生、绘制、枪械过热。
+// 玩家角色是一个圆形（半径 15 像素），带一根指向鼠标方向的“枪管”线。
+//
+// 枪械过热系统：
+//   - 每次射击增加热量，连续射击 3.5 秒后达到 100%
+//   - 未过热时，停止射击 3.5 秒可完全冷却
+//   - 过热后，冷却速度变慢（6 秒才能完全冷却）
+//   - 过热后需等待热量降至 50% 以下才能重新射击
 // =============================================================================
 
 var Player = (function () {
@@ -16,6 +22,14 @@ var Player = (function () {
   var MAX_HP = 100;        // 最大生命值
   var RESPAWN_DELAY = 3;   // 死亡后等待重生的时间（秒）
   var GUN_BARREL_LEN = 25; // 枪管线的长度（装饰用）
+
+  // ---- 枪械过热系统常量 ----
+  // 连续射击 3.5 秒达到 100% 热量（射速 750 RPM = 12.5 发/秒，即 0.08 秒/发）
+  // 每发子弹增加热量 = 100 / (3.5 / 0.08) ≈ 2.857%
+  var HEAT_PER_SHOT = 100 / (3.5 / 0.08);     // 每发射击增加的热量（约 2.857）
+  var NORMAL_COOL_RATE = 100 / 3.5;             // 正常冷却速率（约 28.57%/秒）
+  var OVERHEATED_COOL_RATE = 100 / 6;           // 过热后冷却速率（约 16.67%/秒）
+  var OVERHEAT_SHOOT_THRESHOLD = 50;            // 过热后需降到此值以下才能重新射击
 
   /**
    * 创建一个新玩家对象
@@ -40,7 +54,10 @@ var Player = (function () {
       rollDirY: 0,          // 翻滚方向 Y
       alive: true,          // 是否存活
       respawnTimer: 0,      // 重生倒计时
-      radius: RADIUS
+      radius: RADIUS,
+      // ---- 枪械过热属性 ----
+      heat: 0,              // 当前热量（0-100）
+      overheated: false     // 是否处于过热状态
     };
   }
 
@@ -126,6 +143,57 @@ var Player = (function () {
   }
 
   /**
+   * 更新枪械热量（每帧调用）
+   * p: 玩家对象
+   * dt: 帧间隔时间（秒）
+   * didShoot: 本帧是否开了一枪
+   *
+   * 逻辑：
+   *   1. 如果本帧射击了，增加热量（射击时不冷却！）
+   *   2. 如果热量达到 100%，标记为过热
+   *   3. 如果没有射击，热量按时间递减
+   *      - 正常状态：3.5 秒从 100% 降到 0%
+   *      - 过热状态：6 秒从 100% 降到 0%（更慢）
+   *   4. 过热状态下，热量降到 50% 以下时解除过热
+   *
+   * 注意：射击时不冷却，这样连续射击 3.5 秒就能填满热量条
+   */
+  function updateHeat(p, dt, didShoot) {
+    if (didShoot) {
+      // 射击增加热量（射击帧不冷却！）
+      p.heat += HEAT_PER_SHOT;
+      if (p.heat >= 100) {
+        p.heat = 100;
+        p.overheated = true;  // 达到 100%，标记为过热
+      }
+    } else if (p.heat > 0) {
+      // 没有射击时，热量逐渐降低
+      var coolRate = p.overheated ? OVERHEATED_COOL_RATE : NORMAL_COOL_RATE;
+      p.heat -= coolRate * dt;
+      if (p.heat <= 0) {
+        p.heat = 0;
+        p.overheated = false;  // 完全冷却，解除过热
+      }
+    }
+
+    // 过热状态下，热量降到阈值以下时解除过热（可以重新射击）
+    if (p.overheated && p.heat <= OVERHEAT_SHOOT_THRESHOLD) {
+      p.overheated = false;
+    }
+  }
+
+  /**
+   * 检查玩家是否可以射击（未过热）
+   * p: 玩家对象
+   * 返回：true = 可以射击，false = 过热中不能射击
+   */
+  function canShoot(p) {
+    // 过热状态下，必须等热量降到 50% 以下才能射击
+    if (p.overheated) return false;
+    return true;
+  }
+
+  /**
    * 检查并处理玩家重生
    * p: 玩家对象
    * dt: 帧间隔时间
@@ -143,6 +211,7 @@ var Player = (function () {
       p.y = spawnY;
       p.isRolling = false;
       p.rollCooldown = 0;
+      // 注意：重生不重置热量（热量跨重生保持）
     }
   }
 
@@ -255,8 +324,12 @@ var Player = (function () {
     RADIUS: RADIUS,
     MAX_HP: MAX_HP,
     ROLL_COOLDOWN: ROLL_COOLDOWN,
+    HEAT_PER_SHOT: HEAT_PER_SHOT,
+    OVERHEAT_SHOOT_THRESHOLD: OVERHEAT_SHOOT_THRESHOLD,
     createPlayer: createPlayer,
     updatePlayer: updatePlayer,
+    updateHeat: updateHeat,
+    canShoot: canShoot,
     updateAim: updateAim,
     damagePlayer: damagePlayer,
     checkRespawn: checkRespawn,

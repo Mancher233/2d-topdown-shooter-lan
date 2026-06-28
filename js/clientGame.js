@@ -32,6 +32,11 @@ var ClientGame = (function () {
   // 加入者用这个来限制发送射击事件的频率（匹配房主的 FIRE_INTERVAL）
   var localShootTimer = 0;
 
+  // ---- 本地热量追踪 ----
+  // 热量不通过网络同步，每个客户端自己计算自己的热量
+  var localHeat = 0;          // 本地热量（0-100）
+  var localOverheated = false; // 本地过热状态
+
   // ---- 视线计算节流（高刷新率显示器优化） ----
   var cachedVisionPoints = null;
   var lastVisionTime = 0;
@@ -121,11 +126,13 @@ var ClientGame = (function () {
     // 发送输入状态
     Network.sendInput(keysList, Input.getMousePos().x, Input.getMousePos().y, Input.isMouseDown(), aimAngle);
 
-    // 全自动射击：按住左键连续射击，射速由 FIRE_INTERVAL 控制
+    // 全自动射击：按住左键连续射击 + 未过热
+    var didShoot = false;
     localShootTimer -= dt;
-    if (Input.isMouseDown() && localShootTimer <= 0 && localPlayer.alive) {
+    if (Input.isMouseDown() && localShootTimer <= 0 && localPlayer.alive && !localOverheated) {
       Network.sendAction('shoot', { angle: aimAngle });
       localShootTimer = Bullet.FIRE_INTERVAL;
+      didShoot = true;
     }
 
     // 检测扔手雷（G 键，按一下扔一个）
@@ -140,6 +147,26 @@ var ClientGame = (function () {
     if (localGrenadeTimer > 0) {
       localGrenadeTimer -= dt;
       if (localGrenadeTimer < 0) localGrenadeTimer = 0;
+    }
+
+    // ---- 本地热量更新 ----
+    // 热量不通过网络同步，加入者自己计算自己的热量
+    if (didShoot) {
+      localHeat += Player.HEAT_PER_SHOT;
+      if (localHeat >= 100) {
+        localHeat = 100;
+        localOverheated = true;
+      }
+    } else if (localHeat > 0) {
+      var coolRate = localOverheated ? (100 / 6) : (100 / 3.5);
+      localHeat -= coolRate * dt;
+      if (localHeat <= 0) {
+        localHeat = 0;
+        localOverheated = false;
+      }
+    }
+    if (localOverheated && localHeat <= Player.OVERHEAT_SHOOT_THRESHOLD) {
+      localOverheated = false;
     }
   }
 
@@ -252,6 +279,43 @@ var ClientGame = (function () {
     ctx.font = '14px monospace';
     ctx.fillText('HP: ' + localPlayer.hp + ' / ' + localPlayer.maxHp, barX + 5, barY + 15);
 
+    // -- 热量条（在血量条下方） --
+    var heatY = barY + barH + 5;
+    var heatH = 14;
+    var heatRatio = localHeat / 100;
+
+    // 背景
+    ctx.fillStyle = '#222';
+    ctx.fillRect(barX, heatY, barW, heatH);
+
+    // 根据热量水平选择颜色（与房主端相同的逻辑）
+    var heatColor;
+    if (localOverheated) {
+      var pulse = 0.6 + 0.4 * Math.abs(Math.sin(performance.now() / 150));
+      ctx.globalAlpha = pulse;
+      heatColor = '#ff1744';
+    } else if (localHeat >= 80) {
+      var t = (localHeat - 80) / 20;
+      heatColor = lerpColor('#ff9800', '#f44336', t);
+    } else {
+      var t = localHeat / 80;
+      heatColor = lerpColor('#ffeb3b', '#ff9800', t);
+    }
+
+    ctx.fillStyle = heatColor;
+    ctx.fillRect(barX, heatY, barW * heatRatio, heatH);
+    ctx.globalAlpha = 1;
+
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, heatY, barW, heatH);
+
+    ctx.fillStyle = '#fff';
+    ctx.font = '10px monospace';
+    var heatText = 'HEAT: ' + Math.round(localHeat) + '%';
+    if (localOverheated) heatText += ' 过热！';
+    ctx.fillText(heatText, barX + 5, heatY + 11);
+
     // 翻滚冷却
     var rollY = barY - 25;
     ctx.fillStyle = '#333';
@@ -286,6 +350,22 @@ var ClientGame = (function () {
       ctx.fillText('你被击败了！重生中...', cw / 2, ch / 2 + 8);
       ctx.textAlign = 'left';
     }
+  }
+
+  /**
+   * 颜色线性插值辅助函数（与房主端相同）
+   */
+  function lerpColor(c1, c2, t) {
+    var r1 = parseInt(c1.slice(1, 3), 16);
+    var g1 = parseInt(c1.slice(3, 5), 16);
+    var b1 = parseInt(c1.slice(5, 7), 16);
+    var r2 = parseInt(c2.slice(1, 3), 16);
+    var g2 = parseInt(c2.slice(3, 5), 16);
+    var b2 = parseInt(c2.slice(5, 7), 16);
+    var r = Math.round(r1 + (r2 - r1) * t);
+    var g = Math.round(g1 + (g2 - g1) * t);
+    var b = Math.round(b1 + (b2 - b1) * t);
+    return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
   }
 
   // 暴露公共接口
