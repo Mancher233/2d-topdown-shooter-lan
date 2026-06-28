@@ -17,6 +17,7 @@ var HostGame = (function () {
   var lastTime = 0;     // 上一帧的时间戳（用于计算 dt）
   var hostPlayer;       // 指向本地玩家（房主自己）
   var joinerPlayer;     // 指向远程玩家（加入者）
+  var p1, p2;          // 两个玩家对象（供 initSprites 等模块内函数访问）
 
   // 射击冷却计时器（每个玩家各一个）
   var shootTimers = {};       // { player1: 0, player2: 0 }
@@ -27,6 +28,9 @@ var HostGame = (function () {
   var joinerInput = null;
   // 加入者是否在本帧射击了（用于热量更新）
   var joinerDidShootThisFrame = false;
+
+  // 击杀检测：记录上一帧玩家的存活状态
+  var prevAlive = {};
 
   // 状态发送频率控制（约 30 次/秒）
   var stateSendTimer = 0;
@@ -56,8 +60,8 @@ var HostGame = (function () {
 
     // 创建两个玩家
     var sp = GameMap.spawnPoints;
-    var p1 = Player.createPlayer('player1', sp[0].x, sp[0].y, '#4fc3f7'); // 蓝色
-    var p2 = Player.createPlayer('player2', sp[1].x, sp[1].y, '#ef5350'); // 红色
+    p1 = Player.createPlayer('player1', sp[0].x, sp[0].y, '#4fc3f7'); // 蓝色
+    p2 = Player.createPlayer('player2', sp[1].x, sp[1].y, '#ef5350'); // 红色
     players = [p1, p2];
 
     // 确定哪个是本地玩家，哪个是远程玩家
@@ -67,6 +71,12 @@ var HostGame = (function () {
     // 初始化冷却计时器
     shootTimers = { player1: 0, player2: 0 };
     grenadeTimers = { player1: 0, player2: 0 };
+
+    // 初始化击杀检测状态
+    prevAlive = { player1: true, player2: true };
+
+    // 初始化角色精灵和手雷精灵
+    initSprites();
 
     // 开始游戏循环
     running = true;
@@ -86,7 +96,7 @@ var HostGame = (function () {
       var audioCtx = new AudioCtx();
       var oscillator = audioCtx.createOscillator();
       var gainNode = audioCtx.createGain();
-      gainNode.gain.value = 0.001;  // 音量极低，人耳几乎听不到
+      gainNode.gain.value = 0.0001;  // 音量极低，人耳几乎听不到
       oscillator.connect(gainNode);
       gainNode.connect(audioCtx.destination);
       oscillator.start();
@@ -94,6 +104,29 @@ var HostGame = (function () {
     } catch (e) {
       console.warn('[HostGame] Anti-throttle failed:', e);
     }
+  }
+
+  /**
+   * 初始化角色精灵和手雷精灵
+   * 从 Assets 模块加载图片，设置到玩家对象和手雷模块上
+   * 如果图片加载失败，会回退到原始圆形
+   */
+  function initSprites() {
+    // 房主（player1）= 张雪峰，加入者（player2）= 科比
+    var zxfImg = Assets.getImage('zxf');
+    var kobeImg = Assets.getImage('kobe');
+    var qlzImg = Assets.getImage('qlz');
+    var lqImg = Assets.getImage('lq');
+
+    // 设置玩家精灵（player1 = 张雪峰，player2 = 科比）
+    Player.setSprite(p1, zxfImg);
+    Player.setSprite(p2, kobeImg);
+
+    // 设置手雷精灵（按所有者 ID 区分）
+    Grenade.setSprites({
+      'player1': qlzImg,
+      'player2': lqImg
+    });
   }
 
   /**
@@ -130,6 +163,11 @@ var HostGame = (function () {
       if (grenadeTimers[jid] <= 0) {
         spawnGrenade(joinerPlayer, data.params.targetX, data.params.targetY);
         grenadeTimers[jid] = Grenade.COOLDOWN;
+        // 科比技能：扔手雷后获得 5 秒无热量 buff
+        joinerPlayer.noHeatBuffTimer = Player.BUFF_DURATION;
+        // 播放科比扔手雷语音（双方都能听到）
+        Assets.playVoice('kobe1');
+        Network.sendVoice('kobe1');
       }
     }
   }
@@ -197,6 +235,11 @@ var HostGame = (function () {
     if (Input.isKeyDown('g') && !hostGWasDown && grenadeTimers[hostPlayer.id] <= 0 && hostPlayer.alive) {
       spawnGrenade(hostPlayer, worldMouse.x, worldMouse.y);
       grenadeTimers[hostPlayer.id] = Grenade.COOLDOWN;
+      // 张雪峰技能：扔手雷后获得 5 秒 1.5 倍加速
+      hostPlayer.speedBuffTimer = Player.BUFF_DURATION;
+      // 播放张雪峰扔手雷语音（双方都能听到）
+      Assets.playVoice('zxf1');
+      Network.sendVoice('zxf1');
     }
     hostGWasDown = Input.isKeyDown('g');
 
@@ -233,6 +276,15 @@ var HostGame = (function () {
     Player.updateHeat(hostPlayer, dt, hostDidShoot);
     Player.updateHeat(joinerPlayer, dt, joinerDidShootThisFrame);
     joinerDidShootThisFrame = false;  // 重置加入者射击标记
+
+    // ---- 2.6 更新技能 buff 计时器 ----
+    var hostBuffResult = Player.updateBuffs(hostPlayer, dt);
+    var joinerBuffResult = Player.updateBuffs(joinerPlayer, dt);
+    // 张雪峰加速结束语音（只有房主自己听到）
+    if (hostBuffResult.speedBuffEnded) {
+      Assets.playVoice('zxf2');
+      Network.sendVoice('zxf2');
+    }
 
     // ---- 3. 更新子弹 ----
     for (var i = 0; i < bullets.length; i++) {
@@ -272,6 +324,29 @@ var HostGame = (function () {
     // ---- 7. 清理已失效的对象 ----
     bullets = bullets.filter(function (b) { return b.alive; });
     grenades = grenades.filter(function (g) { return g.alive; });
+
+    // ---- 7.5 击杀检测 + 语音触发 ----
+    for (var pi = 0; pi < players.length; pi++) {
+      var p = players[pi];
+      var wasAlive = prevAlive[p.id];
+      if (wasAlive && !p.alive) {
+        // 这个玩家刚刚死亡！
+        if (p.id === hostPlayer.id) {
+          // 房主被击杀——播放房主死亡语音（同步给加入者）
+          Assets.playVoice('zxf3');
+          Network.sendVoice('zxf3');
+          // 加入者击杀了房主——加入者本地播放击杀语音（不发送）
+          // 加入者自己会在客户端检测到并播放 kobe4
+        } else {
+          // 加入者被击杀——播放加入者死亡语音（同步给加入者）
+          Assets.playVoice('kobe3');
+          Network.sendVoice('kobe3');
+          // 房主击杀了加入者——房主本地播放击杀语音（不发送）
+          Assets.playVoice('zxf4');
+        }
+      }
+      prevAlive[p.id] = p.alive;
+    }
 
     // ---- 8. 重生检查 ----
     var sp = GameMap.spawnPoints;

@@ -11,9 +11,21 @@ var Grenade = (function () {
   var FLIGHT_TIME = 0.8;      // 手雷飞行时间（秒）—— 从扔出到爆炸
   var DAMAGE = 40;            // 爆炸伤害
   var EXPLOSION_RADIUS = 100; // 爆炸范围半径（像素）
-  var COOLDOWN = 4;           // 手雷冷却时间（秒）
+  var COOLDOWN = 20;          // 手雷冷却时间（秒）—— 角色技能冷却
   var ARC_HEIGHT = 60;        // 抛物线弧度高度（纯视觉效果）
   var EXPLOSION_DURATION = 0.4; // 爆炸动画持续时间（秒）
+  var SPRITE_SIZE = 24;      // 手雷精灵显示尺寸（像素）
+
+  // 手雷精灵图片引用（通过 setSprites 设置）
+  var grenadeSprites = {};   // { ownerId: Image 对象 }
+
+  /**
+   * 设置手雷精灵图片
+   * sprites: { ownerId: Image 对象 } 例如 { player1: qlzImg, player2: lqImg }
+   */
+  function setSprites(sprites) {
+    grenadeSprites = sprites || {};
+  }
 
   /**
    * 创建一颗新手雷
@@ -121,22 +133,33 @@ var Grenade = (function () {
     if (!g.exploded) {
       // ---- 飞行中的手雷 ----
       var arcH = getArcHeight(g);
-
-      // 画影子（在地面上，不随弧度升高）
+    
+      // 画影子（在地地面上，不随弧度升高）
       ctx.fillStyle = 'rgba(0,0,0,0.3)';
       ctx.beginPath();
       ctx.ellipse(g.x, g.y, 6, 3, 0, 0, Math.PI * 2);
       ctx.fill();
-
+    
       // 画手雷本体（抬高 arcH 像素，看起来在飞）
       var drawY = g.y - arcH;
-      ctx.fillStyle = '#4caf50';  // 绿色
-      ctx.beginPath();
-      ctx.arc(g.x, drawY, 6, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#2e7d32';
-      ctx.lineWidth = 2;
-      ctx.stroke();
+      var spriteImg = grenadeSprites[g.ownerId];
+      if (spriteImg) {
+        // 用精灵图片绘制手雷
+        ctx.drawImage(spriteImg,
+          g.x - SPRITE_SIZE / 2, drawY - SPRITE_SIZE / 2,
+          SPRITE_SIZE, SPRITE_SIZE);
+      } else {
+        // 回退：画圆形手雷（根据所有者区分颜色）
+        var fallbackColor = (g.ownerId === 'player1') ? '#4caf50' : '#ff9800';
+        var borderColor = (g.ownerId === 'player1') ? '#2e7d32' : '#e65100';
+        ctx.fillStyle = fallbackColor;
+        ctx.beginPath();
+        ctx.arc(g.x, drawY, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = borderColor;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
 
       // 画投掷目标的指示圈（半透明虚线圈）
       ctx.strokeStyle = 'rgba(255,100,100,0.3)';
@@ -180,6 +203,8 @@ var Grenade = (function () {
     DAMAGE: DAMAGE,
     EXPLOSION_RADIUS: EXPLOSION_RADIUS,
     COOLDOWN: COOLDOWN,
+    SPRITE_SIZE: SPRITE_SIZE,
+    setSprites: setSprites,
     createGrenade: createGrenade,
     updateGrenade: updateGrenade,
     grenadeHitsPlayer: grenadeHitsPlayer,

@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <title>2D 俯视角射击游戏 - LAN 多人对战</title>
+  <title>张雪峰大战科比</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -12,23 +12,23 @@
        玩家在这里选择"创建房间"或"加入房间"
        ============================== -->
   <div id="lobby">
-    <h1>2D 俯视角射击游戏</h1>
+    <h1>张雪峰大战科比</h1>
     <p class="subtitle">局域网双人对战</p>
 
     <div id="status-msg">请选择操作：</div>
 
     <!-- 创建游戏（Host）按钮 -->
     <div class="lobby-section">
-      <button id="btn-host">创建游戏 (Host)</button>
-      <p class="hint">在本机启动游戏，等待另一位玩家加入</p>
+      <button id="btn-host">创建游戏 (Host) - Play as 张雪峰</button>
+      <p class="hint">在本机启动游戏，操控张雪峰，等待另一位玩家加入</p>
     </div>
 
     <!-- 加入游戏（Join）区域 -->
     <div class="lobby-section">
       <label for="input-ip">房主 IP 地址：</label>
       <input type="text" id="input-ip" placeholder="例如 192.168.1.100">
-      <button id="btn-join">加入游戏 (Join)</button>
-      <p class="hint">输入房主电脑的局域网 IP 地址来加入游戏</p>
+      <button id="btn-join">加入游戏 (Join) - Play as 科比</button>
+      <p class="hint">输入房主 IP 加入游戏，操控科比</p>
     </div>
   </div>
 
@@ -46,6 +46,8 @@
   <script src="js/utils.js"></script>
   <!-- 键盘和鼠标输入 -->
   <script src="js/input.js"></script>
+  <!-- 资源预加载（图片 + 音频） -->
+  <script src="js/assets.js"></script>
   <!-- 地图：墙壁、碰撞检测 -->
   <script src="js/map.js"></script>
   <!-- 玩家：移动、翻滚、瞄准 -->
@@ -201,20 +203,24 @@
       // 隐藏大厅，显示游戏画布
       lobby.style.display = 'none';
       canvas.style.display = 'block';
-
+    
       // 让画布填满窗口
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
-
+    
       // 初始化输入系统（绑定到画布上）
       Input.init(canvas);
-
-      // 根据角色启动不同的游戏循环
-      if (isHost) {
-        HostGame.start(canvas, myId);
-      } else {
-        ClientGame.start(canvas, myId);
-      }
+    
+      // 预加载所有资源（图片 + 音频），加载完成后再启动游戏
+      setStatus('正在加载游戏资源...');
+      Assets.preloadAll(function () {
+        // 根据角色启动对应的游戏循环
+        if (isHost) {
+          HostGame.start(canvas, myId);
+        } else {
+          ClientGame.start(canvas, myId);
+        }
+      });
     }
 
     // 窗口大小改变时，调整画布尺寸

@@ -111,6 +111,18 @@ var Network = (function () {
   }
 
   /**
+   * 发送语音事件（房主 -> 加入者）
+   * voiceId: 语音标识符（如 'zxf1', 'kobe3'）
+   * 用于同步播放双方都能听到的语音
+   */
+  function sendVoice(voiceId) {
+    send({
+      type: 'voice',
+      voiceId: voiceId
+    });
+  }
+
+  /**
    * 检查 WebSocket 是否已连接
    */
   function isConnected() {
@@ -124,6 +136,7 @@ var Network = (function () {
     sendInput: sendInput,
     sendAction: sendAction,
     sendState: sendState,
+    sendVoice: sendVoice,
     isConnected: isConnected
   };
 

@@ -38,6 +38,9 @@ var ClientGame = (function () {
   var localOverheated = false; // 本地过热状态
   var localCoolDelay = 0;     // 射击后 0.1 秒内不自然冷却
 
+  // ---- 击杀检测（客户端本地） ----
+  var prevAlive = {};  // 上一帧各玩家存活状态 { player1: bool, player2: bool }
+
   // ---- 视线计算节流（高刷新率显示器优化） ----
   var cachedVisionPoints = null;
   var lastVisionTime = 0;
@@ -68,7 +71,7 @@ var ClientGame = (function () {
       var audioCtx = new AudioCtx();
       var oscillator = audioCtx.createOscillator();
       var gainNode = audioCtx.createGain();
-      gainNode.gain.value = 0.001;
+      gainNode.gain.value = 0.0001;
       oscillator.connect(gainNode);
       gainNode.connect(audioCtx.destination);
       oscillator.start();
@@ -83,6 +86,10 @@ var ClientGame = (function () {
   function onNetworkMessage(data) {
     if (data.type === 'state') {
       receivedState = data.state;
+    }
+    // 处理房主发来的语音事件（双方都能听到的语音）
+    if (data.type === 'voice') {
+      Assets.playVoice(data.voiceId);
     }
   }
 
@@ -152,13 +159,18 @@ var ClientGame = (function () {
 
     // ---- 本地热量更新 ----
     // 热量不通过网络同步，加入者自己计算自己的热量
+    // 检查无热量 buff（从房主同步的玩家对象中获取）
+    var hasNoHeatBuff = localPlayer && localPlayer.noHeatBuffTimer > 0;
     if (didShoot) {
-      localHeat += Player.HEAT_PER_SHOT;
-      localCoolDelay = Player.SHOT_COOL_DELAY;  // 射击后短暂禁止自然冷却
-      if (localHeat >= Player.MAX_HEAT) {
-        localHeat = Player.MAX_HEAT;
-        localOverheated = true;
+      // 无热量 buff 期间不增加热量
+      if (!hasNoHeatBuff) {
+        localHeat += Player.HEAT_PER_SHOT;
+        if (localHeat >= Player.MAX_HEAT) {
+          localHeat = Player.MAX_HEAT;
+          localOverheated = true;
+        }
       }
+      localCoolDelay = Player.SHOT_COOL_DELAY;  // 射击后短暂禁止自然冷却
     } else if (localHeat > 0) {
       if (localCoolDelay > 0) {
         localCoolDelay -= dt;
@@ -199,6 +211,26 @@ var ClientGame = (function () {
     var players = receivedState.players;
     var bullets = receivedState.bullets;
     var grenades = receivedState.grenades;
+
+    // 为玩家对象设置精灵图片（每帧都要设置，因为 receivedState 每次更新都是新对象）
+    applySprites(players);
+
+    // ---- 客户端击杀检测 ----
+    for (var pi = 0; pi < players.length; pi++) {
+      var p = players[pi];
+      var wasAlive = prevAlive[p.id];
+      if (wasAlive === true && !p.alive) {
+        // 某个玩家刚刚死亡
+        if (p.id === myId) {
+          // 本地玩家（科比）被击杀——死亡语音已由房主同步播放
+          // 这里不需要额外处理（房主会发送 kobe3）
+        } else {
+          // 房主被击杀——科比击杀了房主，本地播放击杀语音（不同步）
+          Assets.playVoice('kobe4');
+        }
+      }
+      prevAlive[p.id] = p.alive;
+    }
 
     // 相机跟随本地玩家
     var camX = localPlayer.x - cw / 2;
@@ -259,6 +291,32 @@ var ClientGame = (function () {
         return;
       }
     }
+  }
+
+  /**
+   * 为收到的玩家对象设置精灵图片
+   * 房主（player1）= 张雪峰，加入者（player2）= 科比
+   * 同时设置手雷精灵
+   */
+  function applySprites(players) {
+    var zxfImg = Assets.getImage('zxf');
+    var kobeImg = Assets.getImage('kobe');
+    var qlzImg = Assets.getImage('qlz');
+    var lqImg = Assets.getImage('lq');
+
+    for (var i = 0; i < players.length; i++) {
+      if (players[i].id === 'player1') {
+        Player.setSprite(players[i], zxfImg);
+      } else {
+        Player.setSprite(players[i], kobeImg);
+      }
+    }
+
+    // 设置手雷精灵
+    Grenade.setSprites({
+      'player1': qlzImg,
+      'player2': lqImg
+    });
   }
 
   // ---- HUD ----

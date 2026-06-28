@@ -23,6 +23,9 @@ var Player = (function () {
   var MAX_HP = 100;        // 最大生命值
   var RESPAWN_DELAY = 3;   // 死亡后等待重生的时间（秒）
   var GUN_BARREL_LEN = 25; // 枪管线的长度（装饰用）
+  var SPRITE_SIZE = 40;    // 角色精灵显示尺寸（像素）
+  var BUFF_DURATION = 5;   // 手雷技能 buff 持续时间（秒）
+  var SPEED_MULTIPLIER = 1.5;  // 张雪峰加速 buff 倍率
 
   // ---- 枪械过热系统常量 ----
   // 射速 12 发/秒，每发 +1 热量，连续射击 ~3.33 秒达到上限
@@ -59,7 +62,13 @@ var Player = (function () {
       // ---- 枪械过热属性 ----
       heat: 0,              // 当前热量（0 ~ MAX_HEAT）
       overheated: false,    // 是否处于过热状态（通过网络同步，对手可见）
-      coolDelay: 0          // 射击后冷却延迟（秒），期间不自然降温
+      coolDelay: 0,         // 射击后冷却延迟（秒），期间不自然降温
+      // ---- 角色精灵 ----
+      sprite: null,         // 角色图片（Image 对象），null 则用圆形回退
+      fallbackColor: color, // 回退颜色（图片加载失败时使用）
+      // ---- 技能 buff 属性 ----
+      speedBuffTimer: 0,    // 加速 buff 剩余时间（秒），0 = 无 buff
+      noHeatBuffTimer: 0    // 无热量 buff 剩余时间（秒），0 = 无 buff
     };
   }
 
@@ -86,8 +95,13 @@ var Player = (function () {
       }
     } else {
       // ---- 普通移动 ----
-      p.x += moveDir.x * MOVE_SPEED * dt;
-      p.y += moveDir.y * MOVE_SPEED * dt;
+      // 计算实际移动速度（考虑加速 buff）
+      var actualSpeed = MOVE_SPEED;
+      if (p.speedBuffTimer > 0) {
+        actualSpeed = MOVE_SPEED * SPEED_MULTIPLIER;
+      }
+      p.x += moveDir.x * actualSpeed * dt;
+      p.y += moveDir.y * actualSpeed * dt;
 
       // ---- 触发翻滚 ----
       // 按下空格键 且 冷却结束 且 有移动方向
@@ -161,12 +175,15 @@ var Player = (function () {
   function updateHeat(p, dt, didShoot) {
     if (didShoot) {
       // 射击增加热量（射击帧不冷却！）
-      p.heat += HEAT_PER_SHOT;
-      p.coolDelay = SHOT_COOL_DELAY;  // 射击后短暂禁止自然冷却
-      if (p.heat >= MAX_HEAT) {
-        p.heat = MAX_HEAT;
-        p.overheated = true;  // 达到上限，标记为过热
+      // 如果处于无热量 buff 期间，不增加热量
+      if (p.noHeatBuffTimer <= 0) {
+        p.heat += HEAT_PER_SHOT;
+        if (p.heat >= MAX_HEAT) {
+          p.heat = MAX_HEAT;
+          p.overheated = true;  // 达到上限，标记为过热
+        }
       }
+      p.coolDelay = SHOT_COOL_DELAY;  // 射击后短暂禁止自然冷却
     } else if (p.heat > 0) {
       // 射击后的短暂延迟期内不冷却
       if (p.coolDelay > 0) {
@@ -218,19 +235,65 @@ var Player = (function () {
   }
 
   /**
+   * 更新技能 buff 计时器（每帧调用）
+   * p: 玩家对象
+   * dt: 帧间隔时间（秒）
+   * 返回：{ speedBuffEnded: bool, noHeatBuffEnded: bool } 标记 buff 是否刚好在本帧结束
+   */
+  function updateBuffs(p, dt) {
+    var result = { speedBuffEnded: false, noHeatBuffEnded: false };
+    if (p.speedBuffTimer > 0) {
+      p.speedBuffTimer -= dt;
+      if (p.speedBuffTimer <= 0) {
+        p.speedBuffTimer = 0;
+        result.speedBuffEnded = true;
+      }
+    }
+    if (p.noHeatBuffTimer > 0) {
+      p.noHeatBuffTimer -= dt;
+      if (p.noHeatBuffTimer <= 0) {
+        p.noHeatBuffTimer = 0;
+        result.noHeatBuffEnded = true;
+      }
+    }
+    return result;
+  }
+
+  /**
+   * 设置玩家的角色精灵图片
+   * p: 玩家对象
+   * img: Image 对象（或 null 使用回退）
+   */
+  function setSprite(p, img) {
+    p.sprite = img;
+  }
+
+  /**
    * 绘制玩家角色
    * ctx: Canvas 2D 上下文
    * p: 玩家对象
    */
   function drawPlayer(ctx, p) {
     if (!p.alive) {
-      // 死了：画一个灰色圆圈 + X 标记
+      // ---- 死亡状态：灰色精灵/圆圈 + X 标记 ----
       ctx.globalAlpha = 0.4;
-      ctx.fillStyle = '#888';
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-      ctx.fill();
+      if (p.sprite) {
+        // 画灰色精灵
+        ctx.save();
+        ctx.filter = 'grayscale(100%) brightness(0.5)';
+        ctx.drawImage(p.sprite,
+          p.x - SPRITE_SIZE / 2, p.y - SPRITE_SIZE / 2,
+          SPRITE_SIZE, SPRITE_SIZE);
+        ctx.restore();
+      } else {
+        // 回退：灰色圆圈
+        ctx.fillStyle = '#888';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
       // 画 X
+      ctx.globalAlpha = 0.8;
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -246,24 +309,60 @@ var Player = (function () {
     // ---- 翻滚时的视觉效果：半透明 + 残影 ----
     if (p.isRolling) {
       ctx.globalAlpha = 0.3;
-      // 画一个残影（在翻滚方向的反方向偏移一点）
-      ctx.fillStyle = p.color;
-      ctx.beginPath();
-      ctx.arc(p.x - p.rollDirX * 15, p.y - p.rollDirY * 15, p.radius, 0, Math.PI * 2);
-      ctx.fill();
+      if (p.sprite) {
+        // 残影用精灵绘制
+        ctx.drawImage(p.sprite,
+          p.x - p.rollDirX * 15 - SPRITE_SIZE / 2,
+          p.y - p.rollDirY * 15 - SPRITE_SIZE / 2,
+          SPRITE_SIZE, SPRITE_SIZE);
+      } else {
+        ctx.fillStyle = p.fallbackColor;
+        ctx.beginPath();
+        ctx.arc(p.x - p.rollDirX * 15, p.y - p.rollDirY * 15, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.globalAlpha = 0.7;
     }
 
-    // ---- 画玩家身体（实心圆） ----
-    ctx.fillStyle = p.color;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-    ctx.fill();
+    // ---- 加速 buff 视觉效果：蓝色光圈 ----
+    if (p.speedBuffTimer > 0) {
+      var glowPulse = 0.3 + 0.2 * Math.abs(Math.sin(performance.now() / 150));
+      ctx.globalAlpha = glowPulse;
+      ctx.fillStyle = '#00e5ff';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, SPRITE_SIZE / 2 + 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
 
-    // 画一个白色边框
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
-    ctx.stroke();
+    // ---- 无热量 buff 视觉效果：橙色光圈 ----
+    if (p.noHeatBuffTimer > 0) {
+      var glowPulse = 0.3 + 0.2 * Math.abs(Math.sin(performance.now() / 200));
+      ctx.globalAlpha = glowPulse;
+      ctx.fillStyle = '#ff9800';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, SPRITE_SIZE / 2 + 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // ---- 画玩家身体（精灵或圆圈） ----
+    if (p.sprite) {
+      // 画角色精灵（40x40，居中于玩家位置）
+      ctx.drawImage(p.sprite,
+        p.x - SPRITE_SIZE / 2, p.y - SPRITE_SIZE / 2,
+        SPRITE_SIZE, SPRITE_SIZE);
+    } else {
+      // 回退：画圆形角色
+      ctx.fillStyle = p.fallbackColor;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+      ctx.fill();
+      // 白色边框
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
 
     // ---- 画枪管（从圆心朝瞄准方向画一条线） ----
     var gunX = p.x + Math.cos(p.aimAngle) * GUN_BARREL_LEN;
@@ -284,7 +383,7 @@ var Player = (function () {
     var barW = 30;           // 血条总宽度
     var barH = 4;            // 血条高度
     var barX = p.x - barW / 2;
-    var barY = p.y - p.radius - 10;  // 在头顶上方
+    var barY = p.y - SPRITE_SIZE / 2 - 10;  // 在精灵头顶上方
 
     // 红色背景（表示失去的血）
     ctx.fillStyle = '#e53935';
@@ -310,6 +409,22 @@ var Player = (function () {
       ctx.font = 'bold 9px monospace';
       ctx.textAlign = 'center';
       ctx.fillText('OVERHEAT', p.x, tagY + 7);
+      ctx.textAlign = 'left';
+    }
+
+    // ---- buff 持续时间文字（小字显示在血条上方） ----
+    if (p.speedBuffTimer > 0) {
+      ctx.fillStyle = '#00e5ff';
+      ctx.font = 'bold 8px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('⚡' + p.speedBuffTimer.toFixed(1) + 's', p.x, barY - 4);
+      ctx.textAlign = 'left';
+    }
+    if (p.noHeatBuffTimer > 0) {
+      ctx.fillStyle = '#ff9800';
+      ctx.font = 'bold 8px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('🔥' + p.noHeatBuffTimer.toFixed(1) + 's', p.x, barY - 4);
       ctx.textAlign = 'left';
     }
   }
@@ -347,9 +462,14 @@ var Player = (function () {
     HEAT_PER_SHOT: HEAT_PER_SHOT,
     MAX_HEAT: MAX_HEAT,
     SHOT_COOL_DELAY: SHOT_COOL_DELAY,
+    BUFF_DURATION: BUFF_DURATION,
+    SPEED_MULTIPLIER: SPEED_MULTIPLIER,
+    SPRITE_SIZE: SPRITE_SIZE,
     createPlayer: createPlayer,
     updatePlayer: updatePlayer,
     updateHeat: updateHeat,
+    updateBuffs: updateBuffs,
+    setSprite: setSprite,
     canShoot: canShoot,
     updateAim: updateAim,
     damagePlayer: damagePlayer,
